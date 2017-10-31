@@ -1,0 +1,134 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Oct 21 11:47:06 2017
+
+@author: Danny
+PHONIES
+"""
+import os, sys
+from cryptography.hazmat import primitives
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+#from cryptography.hazmat.primitives import 
+#from cryptography.hazmat.primitives.ciphers import Cipher, algorithms,  modes
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization, hashes, padding
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+
+#this method encrypts the messag using they key provided
+#Its generates an IV, pads the image as need, and returns the ciphertext along with the IV
+def Myencrypt(message, key):
+    if (len(key) == 32):
+        iv = os.urandom(16)#generate IV
+        
+        padder = primitives.padding.PKCS7(128).padder()
+        
+        cipher = Cipher(algorithms.AES(key), modes.CBC(iv),default_backend())#Initialize AES box
+        enc = cipher.encryptor()#Making AES encryptor
+        
+        #Padding the message 
+        pad = padder.update(message)
+        pad = pad + padder.finalize()
+        message = pad
+
+        #encrypting the message
+        c = enc.update(message) + enc.finalize()
+        return (c, iv)
+    else:
+        print("Error: Key is too small")
+        
+        
+def Mydecrypt(ciphertext, iv, key):
+    
+    #Initialize AES box
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv),default_backend())
+    
+    #Make AES decrytor
+    dec = cipher.decryptor()            
+    
+    #decrypt the ciphertext and return unencrypted message
+    message = dec.update(ciphertext) + dec.finalize()
+    return message  
+
+#This file takes a file and passes its content to the encryption method
+def MyfileEncrypt(filepath):
+    key = os.urandom(32)#generate a file
+    
+    #Open file to be enrypted                
+    file = open(filepath, 'rb')
+    filename, fileext = os.path.splitext(filepath)#getting file extension of opened file
+    message = file.read()#reading content of file
+    (ct, iv) = Myencrypt(message, key)#pasing contenct of file to encryption method
+    file.close()
+    
+    #the encrypted file will be named "enc" and have the same extension as the original file
+    file = open("enc"+fileext, 'wb')
+    #writing to new file and closing it
+    file.write(ct)
+    file.close()
+    
+    return(ct,iv,key, fileext)
+    
+ 
+#This method takes the encrypted file and passes its contents to the decryption method
+def MyfileDecrypt(key, iv, ext):
+    #opening the encrypted file
+    file = open("enc" + ext, 'rb')
+    cipher = file.read()#reading the contents of the file
+    
+    unpad = primitives.padding.PKCS7(128).unpadder()
+    message = Mydecrypt(cipher, iv, key)#passing contents of file to decryption method
+    file.close()
+    
+    #unpadding the contents of file before decryption
+    pad = unpad.update(message)
+    pad = pad + unpad.finalize()
+    message= pad
+    
+    #Saving decrypted file into new file named "dec" with same extension as original file
+    file = open(" dec" + ext, 'wb')
+    file.write(message)
+    file.close()
+    return message
+ 
+#This method takes a file and RSA public key 
+#It encrypts the file by passing it to the file encryption method
+#Then it encrypts the key using the RSA public key 
+def MyRSAEncrypt(filepath, RSA_Publickey_path):
+    (c, iv, key, ext) = MyfileEncrypt(filepath)
+
+    #Getting the RSA public key
+    file = open(RSA_Publickey_path, 'rb')
+    rsakey  = file.read()
+    
+    #Loading RSA key
+    pk = serialization.load_pem_public_key(rsakey, default_backend())
+    
+    #Encryption the AES key with RSA key
+    RSACipher = pk.encrypt(key, padding.OAEP(padding.MGF1(hashes.SHA256()), hashes.SHA256(), None))
+    return(RSACipher, c, iv, ext)
+
+#This methid uses and RSA Private key to decrypt the RSA key
+#it uses the AES key to decrpyt the file that was encrypted by the previous method
+def MyRSADecrypt(RSACipher, c, iv, ext, RSA_Privatekey_path):
+    file = open(RSA_Privatekey_path, 'rb')
+    rsakey = file.read()
+    pk = serialization.load_pem_private_key(rsakey, None, default_backend())
+    key = pk.decrypt(RSACipher, padding.OAEP(padding.MGF1(hashes.SHA256()), hashes.SHA256(), None))
+    message = MyfileDecrypt(key,iv, ext )
+    return message
+    
+    
+    
+   
+
+'''
+(ct, iv, key, ext) = MyfileEncrypt('E:/Users/Danny/Desktop/message.txt')
+
+print(ct)
+print(MyfileDecrypt(key,iv,'E:/Users/Danny/Desktop/messageenc.txt' ))
+'''
+
+(RSACipher, c, iv, ext) = MyRSAEncrypt('C:/Users/Danny/Desktop/sun.jpg', 'C:/Users/Danny/.ssh/pubkey.pem' )
+print(c)
+print(MyRSADecrypt(RSACipher, c, iv, ext, 'C:/Users/Danny/.ssh/priv.pem' ))
+
